@@ -37,7 +37,7 @@ except:
     pass
 
 SAVE_FOLDER = 'demo_result'  # NOTE: set your save path here
-CATEGORY_DICT = {0: 'car'}  # NOTE: set the categories in your videos here, 
+CATEGORY_DICT = {0: 'person'}  # NOTE: set the categories in your videos here, 
 # format: class_id(start from 0): class_name
 
 timer = Timer()
@@ -98,11 +98,11 @@ def main(opts):
         else: obj_name = obj_name[:-4]
     
     else:  
-        obj = my_queue(os.listdir(obj_name))
+        obj = my_queue(os.listdir(obj_name),obj_name)
         get_next_frame = lambda _ : obj.pop_front()
 
         if os.path.isabs(obj_name): obj_name = obj_name.split('/')[-1]
-
+        
 
     """
     3. start tracking
@@ -116,7 +116,6 @@ def main(opts):
 
         # end condition
         is_valid, img0 = get_next_frame(None)  # img0: (H, W, C)
-
         if not is_valid: 
             break  # end of reading 
 
@@ -134,8 +133,9 @@ def main(opts):
             # NOTE: assert batch size == 1
             out = out.squeeze(0)
         # remove some low conf detections
-        out = out[out[:, 4] > 0.001]
-        
+        # 只要人的检测结果，并且conf > 0.25
+        out = out[out[:, 5] == 0]
+        out = out[out[:, 4] > 0.25]
     
         # NOTE: yolo v7 origin out format: [xc, yc, w, h, conf, cls0_conf, cls1_conf, ..., clsn_conf]
         cls_conf, cls_idx = torch.max(out[:, 5:], dim=1)
@@ -171,6 +171,7 @@ def main(opts):
     timer.clear()  # clear for next seq
     # thirdly, save results
     # every time assign a different name
+    
     if opts.save_txt: save_results(obj_name, results)
 
     ## finally, save videos
@@ -181,15 +182,17 @@ class my_queue:
     """
     implement a queue for image seq reading
     """
-    def __init__(self, arr: list) -> None:
+    def __init__(self, arr: list, obj_name) -> None:
         self.arr = arr 
         self.start_idx = 0
+        self.path = obj_name
 
     def push_back(self, item):
         self.arr.append(item)
     
     def pop_front(self):
-        ret = cv2.imread(self.arr[self.start_idx])
+        print("os.path.join(self.path, self.arr[self.start_idx]):",os.path.join(self.path, self.arr[self.start_idx]))
+        ret = cv2.imread(os.path.join(self.path, self.arr[self.start_idx]))
         self.start_idx += 1
         return not self.is_empty(), ret
     
@@ -266,8 +269,10 @@ def save_results(obj_name, results, data_type='default'):
     assert len(results)
     if not data_type == 'default':
         raise NotImplementedError  # TODO
-
-    with open(os.path.join(SAVE_FOLDER, obj_name + '.txt'), 'w') as f:
+    txtPath = os.path.join(SAVE_FOLDER, obj_name)
+    if not os.path.isdir(txtPath): 
+        os.makedirs(txtPath)
+    with open(os.path.join(txtPath,'result.txt'), 'w') as f:
         for frame_id, target_ids, tlwhs, clses in results:
             if data_type == 'default':
 
@@ -353,7 +358,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_txt', type=bool, default=False, help='whether save txt')
 
     parser.add_argument('--tracker', type=str, default='sort', help='sort, deepsort, etc')
-    parser.add_argument('--model_path', type=str, default='./weights/yolov7_UAVDT_35epochs_20230507.pt', help='model path')
+    parser.add_argument('--model_path', type=str, default='./weights/yolov7.pt', help='model path')
     parser.add_argument('--trace', type=bool, default=False, help='traced model of YOLO v7')
 
     parser.add_argument('--img_size', type=int, default=1280, help='[train, test] image sizes')
